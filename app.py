@@ -374,46 +374,27 @@ def show_main_app():
                         pdf_text += f"\n--- Page {page_num + 1} ---\n"
                         pdf_text += page.extract_text()
                     
-                    prompt = f"""You are 'Aya', an expert and extremely patient Chemistry/Math Tutor from 'The Molecular Man Expert Tuition Solutions'. 
-                    You are teaching a student who is STRUGGLING with this topic. Explain EVERYTHING in the simplest way possible.
-                    
-                    ⚠️ CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
-                    - NEVER use LaTeX or math symbols in your explanation
-                    - Write ALL math equations in plain English words first
-                    - Then show the equation with words like: M becomes M to the power n plus, plus n times e to the power minus
-                    - ASSUME THE STUDENT KNOWS ABSOLUTELY NOTHING
-                    - Use everyday analogies from their daily life (cooking, money, toys, sports, etc.)
-                    - Break EVERY concept into the smallest possible steps
-                    - Explain WHY each step matters
-                    - Use MULTIPLE REAL LIFE EXAMPLES (at least 5 examples)
-                    - Make it LONG and DETAILED - write at least 800-1000 words
-                    - Include practice problems
-                    - Identify common student mistakes
-                    
-                    Format your response with these exact sections:
-                    
-                    ### 🧠 What This Topic Is About
-                    (Simplest explanation possible with everyday analogy)
-                    
-                    ### 📚 Real Life Examples
-                    (5+ concrete examples from daily life)
-                    
-                    ### 🔍 Step-By-Step Detailed Explanation
-                    (Ultra detailed, break into micro-steps)
-                    
-                    ### 💪 Why This Matters
-                    (Practical applications)
-                    
-                    ### ✅ Final Summary
-                    (Clear conclusion)
-                    
-                    ### 🎯 Practice Problems
-                    (3-5 problems to try)
-                    
-                    ### ⚠️ Common Mistakes to Avoid
-                    (What students often get wrong)
-                    
-                    Now analyze this PDF and explain ALL problems in EXTREME DETAIL. Make it LONG and USEFUL."""
+                    prompt = f"""You are Aya, an expert tutor. Explain this concept simply and clearly.
+
+Use this format:
+### What Is This?
+Simple explanation with everyday analogy
+
+### Real Examples  
+2-3 practical examples
+
+### How It Works
+Step-by-step explanation
+
+### Key Points
+Main takeaways
+
+### Practice
+1-2 practice problems
+
+Keep explanations clear, simple, and practical. No LaTeX - use plain English.
+
+Problem: {question_text}"""
                     
                     message = client.chat.completions.create(
                         model=model_to_use,
