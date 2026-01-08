@@ -327,21 +327,28 @@ def show_main_app():
                 elif content_type == "video":
                     response = model.generate_content([prompt] + content)
                 
-                # Success! Update the key index
-                st.session_state.api_key_index = current_key_index
+                # Success! Update the key index for next use
+                st.session_state.api_key_index = (current_key_index + 1) % len(api_keys)
                 return response.text
                 
             except Exception as e:
                 error_msg = str(e)
                 
-                # Check if it's a quota error - silently switch without warning
+                # Check if it's a quota error (429) or invalid key
                 if "429" in error_msg or "quota" in error_msg.lower():
-                    # Silent switch - no warning shown to user
+                    # Quota exceeded, try next key
+                    continue
+                elif "API_KEY_INVALID" in error_msg or "API key not valid" in error_msg:
+                    # Invalid key, skip to next
+                    continue
+                elif "RESOURCE_EXHAUSTED" in error_msg:
+                    # Resource exhausted, try next key
                     continue
                 else:
+                    # Other error, return it
                     return f"Error: {error_msg}"
         
-        return "❌ All API keys have exceeded their quota. Please add more API keys or wait for quota reset."
+        return "⚠️ All API keys are exhausted. Please wait a few hours for quota reset or add more API keys."
     
     def universal_solver(question_text=None, file_obj=None, file_type=None):
         
