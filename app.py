@@ -152,13 +152,18 @@ Use plain English ONLY. No symbols, no formulas."""
                 
                 prompt = base_prompt + "\n\nSOLVE THE PROBLEM IN THIS IMAGE:"
                 
-                model = "mixtral-8x7b-32768"
-                message = groq_client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt + f"\n{img_base64[:50]}..."}],
-                    max_tokens=512,
-                    temperature=0.7
-                )
+                # Try different models
+                for model in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "gemma-7b-it", "llama2-70b-4096"]:
+                    try:
+                        message = groq_client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": prompt + f"\n{img_base64[:50]}..."}],
+                            max_tokens=512,
+                            temperature=0.7
+                        )
+                        break
+                    except:
+                        continue
             except Exception as e:
                 return f"Error: {str(e)}"
         
@@ -173,26 +178,36 @@ Use plain English ONLY. No symbols, no formulas."""
                 
                 prompt = base_prompt + f"\n\nPROBLEM:\n{pdf_text}"
                 
-                model = "mixtral-8x7b-32768"
-                message = groq_client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=512,
-                    temperature=0.7
-                )
+                # Try different models
+                for model in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "gemma-7b-it", "llama2-70b-4096"]:
+                    try:
+                        message = groq_client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": prompt}],
+                            max_tokens=512,
+                            temperature=0.7
+                        )
+                        break
+                    except:
+                        continue
             except Exception as e:
                 return f"Error: {str(e)}"
         
         else:
             prompt = base_prompt + f"\n\nPROBLEM:\n{question_text}"
             
-            model = "mixtral-8x7b-32768"
-            message = groq_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=512,
-                temperature=0.7
-            )
+            # Try different models
+            for model in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "gemma-7b-it", "llama2-70b-4096"]:
+                try:
+                    message = groq_client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=512,
+                        temperature=0.7
+                    )
+                    break
+                except:
+                    continue
         
         response_text = message.choices[0].message.content
         response_text = remove_latex(response_text)
