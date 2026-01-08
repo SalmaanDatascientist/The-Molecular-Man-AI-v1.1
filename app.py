@@ -309,7 +309,7 @@ def show_main_app():
                     """
                     
                     message = client.chat.completions.create(
-                        model="mixtral-8x7b-32768",
+                        model="llama-3.1-70b-versatile",
                         messages=[
                             {"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}
                         ],
@@ -356,7 +356,7 @@ def show_main_app():
                     """
                     
                     message = client.chat.completions.create(
-                        model="mixtral-8x7b-32768",
+                        model="llama-3.1-70b-versatile",
                         messages=[
                             {"role": "user", "content": prompt}
                         ],
@@ -396,7 +396,7 @@ def show_main_app():
             
             try:
                 message = client.chat.completions.create(
-                    model="mixtral-8x7b-32768",
+                    model="llama-3.1-70b-versatile",
                     messages=[
                         {"role": "user", "content": prompt}
                     ],
