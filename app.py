@@ -5,8 +5,8 @@ import hashlib
 from datetime import datetime
 import uuid
 import os
-import base64
 from PIL import Image
+import base64
 
 # --- PAGE SETUP ---
 st.set_page_config(
@@ -71,6 +71,8 @@ if "username" not in st.session_state:
     st.session_state.username = None
 if "device_id" not in st.session_state:
     st.session_state.device_id = str(uuid.uuid4())
+if "api_key_index" not in st.session_state:
+    st.session_state.api_key_index = 0
 
 # --- FILE STORAGE ---
 USERS_FILE = "users_database.json"
@@ -80,7 +82,7 @@ def create_empty_database():
     if not os.path.exists(USERS_FILE):
         # Create with default admin user
         default_user = {
-            "Mohammed": hash_password("Molsalmaan@9292")
+            "Mohammed": hashlib.sha256("Molsalmaan@9292".encode()).hexdigest()
         }
         with open(USERS_FILE, "w") as f:
             json.dump(default_user, f)
@@ -277,10 +279,6 @@ def show_main_app():
             st.info("Get free Google API keys from: https://aistudio.google.com/app/apikeys")
             return
         
-        # Initialize session state for key tracking
-        if "api_key_index" not in st.session_state:
-            st.session_state.api_key_index = 0
-        
         # Show which key is active
         st.caption(f"🔑 Using API Key #{st.session_state.api_key_index + 1} of {len(api_keys)}")
         
@@ -288,8 +286,41 @@ def show_main_app():
         st.error(f"⚠️ Error loading API Keys: {str(e)}")
         return
     
+    def try_api_keys(content, prompt, content_type):
+        """Try multiple API keys silently until one works"""
+        
+        for attempt in range(len(api_keys)):
+            current_key_index = (st.session_state.api_key_index + attempt) % len(api_keys)
+            api_key = api_keys[current_key_index]
+            
+            try:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                if content_type == "text":
+                    response = model.generate_content(prompt)
+                elif content_type == "image":
+                    response = model.generate_content([prompt, content])
+                elif content_type == "video":
+                    response = model.generate_content([prompt] + content)
+                
+                # Success! Update the key index
+                st.session_state.api_key_index = current_key_index
+                return response.text
+                
+            except Exception as e:
+                error_msg = str(e)
+                
+                # Check if it's a quota error - silently switch without warning
+                if "429" in error_msg or "quota" in error_msg.lower():
+                    # Silent switch - no warning shown to user
+                    continue
+                else:
+                    return f"Error: {error_msg}"
+        
+        return "❌ All API keys have exceeded their quota. Please add more API keys or wait for quota reset."
+    
     def universal_solver(question_text=None, file_obj=None, file_type=None):
-        global api_keys, api_key_index
         
         prompt = ""
         
@@ -323,7 +354,7 @@ def show_main_app():
                     (The final result)
                     """
                     
-                    return try_api_keys(image, prompt, file_type)
+                    return try_api_keys(image, prompt, "image")
                 except Exception as e:
                     return f"Error processing image: {str(e)}"
             
@@ -457,41 +488,6 @@ def show_main_app():
             **Question:** "{question_text}"
             """
             return try_api_keys(None, prompt, "text")
-    
-    def try_api_keys(content, prompt, content_type):
-        """Try multiple API keys silently until one works"""
-        global api_keys, api_key_index
-        
-        for attempt in range(len(api_keys)):
-            current_key_index = (st.session_state.api_key_index + attempt) % len(api_keys)
-            api_key = api_keys[current_key_index]
-            
-            try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                if content_type == "text":
-                    response = model.generate_content(prompt)
-                elif content_type == "image":
-                    response = model.generate_content([prompt, content])
-                elif content_type == "video":
-                    response = model.generate_content([prompt] + content)
-                
-                # Success! Update the key index
-                st.session_state.api_key_index = current_key_index
-                return response.text
-                
-            except Exception as e:
-                error_msg = str(e)
-                
-                # Check if it's a quota error - silently switch without warning
-                if "429" in error_msg or "quota" in error_msg.lower():
-                    # Silent switch - no warning shown to user
-                    continue
-                else:
-                    return f"Error: {error_msg}"
-        
-        return "❌ All API keys have exceeded their quota. Please add more API keys or wait for quota reset."
     
     # --- INPUT SECTION ---
     st.markdown("### 📝 How to Solve?")
