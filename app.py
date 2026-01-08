@@ -130,50 +130,54 @@ def remove_latex(text):
 def solve_problem(groq_client, model, question_text, file_obj=None, file_type=None):
     """Main solver function"""
     
-    if file_type == "image" and file_obj:
-        try:
-            image = Image.open(file_obj)
-            buffered = io.BytesIO()
-            image.save(buffered, format="PNG")
-            img_base64 = base64.standard_b64encode(buffered.getvalue()).decode("utf-8")
-            prompt = "Explain this problem clearly in plain English. No math symbols."
-            message = groq_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}],
-                max_tokens=512,
-            )
-        except Exception as e:
-            return f"Error: {str(e)}"
-    
-    elif file_type == "pdf" and file_obj:
-        try:
-            import PyPDF2
-            pdf_reader = PyPDF2.PdfReader(file_obj)
-            pdf_text = ""
-            for page_num in range(len(pdf_reader.pages)):
-                page = pdf_reader.pages[page_num]
-                pdf_text += page.extract_text()
-            
-            prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem:\n{pdf_text}"
+    try:
+        if file_type == "image" and file_obj:
+            try:
+                image = Image.open(file_obj)
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                img_base64 = base64.standard_b64encode(buffered.getvalue()).decode("utf-8")
+                prompt = "Explain this problem clearly in plain English. No math symbols."
+                message = groq_client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}],
+                    max_tokens=512,
+                )
+            except Exception as e:
+                return f"Error: {str(e)}"
+        
+        elif file_type == "pdf" and file_obj:
+            try:
+                import PyPDF2
+                pdf_reader = PyPDF2.PdfReader(file_obj)
+                pdf_text = ""
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    pdf_text += page.extract_text()
+                
+                prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem:\n{pdf_text}"
+                message = groq_client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=512,
+                )
+            except Exception as e:
+                return f"Error: {str(e)}"
+        
+        else:
+            prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem: {question_text}"
             message = groq_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=512,
             )
-        except Exception as e:
-            return f"Error: {str(e)}"
+        
+        response_text = message.choices[0].message.content
+        response_text = remove_latex(response_text)
+        return response_text
     
-    else:
-        prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem: {question_text}"
-        message = groq_client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=512,
-        )
-    
-    response_text = message.choices[0].message.content
-    response_text = remove_latex(response_text)
-    return response_text
+    except Exception as e:
+        return f"❌ Error: {str(e)}. Please try again or contact support."
 
 # --- LOGIN PAGE ---
 def show_login_page():
@@ -278,15 +282,18 @@ def show_main_app():
             available_models = []
         
         model_to_use = None
-        for pref in ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"]:
-            if pref in available_models:
-                model_to_use = pref
-                break
+        for pref in ["gpt-4-turbo", "gpt-3.5-turbo", "llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"]:
+            try:
+                if pref in available_models:
+                    model_to_use = pref
+                    break
+            except:
+                pass
         
         if not model_to_use and available_models:
             model_to_use = available_models[0]
         if not model_to_use:
-            model_to_use = "llama3-8b-8192"
+            model_to_use = "gpt-3.5-turbo"
         
         st.caption(f"🔑 Using Groq API - Model: {model_to_use}")
         
