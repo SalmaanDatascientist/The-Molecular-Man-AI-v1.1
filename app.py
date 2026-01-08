@@ -272,7 +272,7 @@ def show_main_app():
         
         # Try to find a working model
         model_to_use = None
-        preferred_models = ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview", "llama-2-70b-4096", "gemma-7b-it", "gemma2-9b-it"]
+        preferred_models = ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768", "gemma-7b-it"]
         
         for model in preferred_models:
             if model in available_models:
@@ -283,7 +283,7 @@ def show_main_app():
             model_to_use = available_models[0]
         
         if not model_to_use:
-            model_to_use = "llama-3.2-90b-vision-preview"
+            model_to_use = "llama3-8b-8192"
         
         st.caption(f"🔑 Using Groq API - Model: {model_to_use} ♾️")
         
