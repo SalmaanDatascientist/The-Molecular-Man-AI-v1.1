@@ -295,7 +295,30 @@ def show_main_app():
             
             try:
                 genai.configure(api_key=api_key)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                # Find available model
+                available_models = []
+                try:
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            available_models.append(m.name)
+                except:
+                    available_models = ['models/gemini-2.0-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
+                
+                # Try models in order of preference
+                model_name = None
+                for pref in ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']:
+                    if pref in available_models or not available_models:
+                        model_name = pref
+                        break
+                
+                if not model_name and available_models:
+                    model_name = available_models[0]
+                
+                if not model_name:
+                    model_name = 'models/gemini-2.0-flash'
+                
+                model = genai.GenerativeModel(model_name)
                 
                 if content_type == "text":
                     response = model.generate_content(prompt)
