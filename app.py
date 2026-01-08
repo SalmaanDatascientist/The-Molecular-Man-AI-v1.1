@@ -261,7 +261,32 @@ def show_main_app():
     try:
         groq_api_key = st.secrets["GROQ_API_KEY"]
         client = Groq(api_key=groq_api_key)
-        st.caption("🔑 Using Groq API - Unlimited Free Requests ♾️")
+        
+        # Auto-detect available models
+        available_models = []
+        try:
+            models = client.models.list()
+            available_models = [m.id for m in models.data]
+        except:
+            available_models = []
+        
+        # Try to find a working model
+        model_to_use = None
+        preferred_models = ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview", "llama-2-70b-4096", "gemma-7b-it", "gemma2-9b-it"]
+        
+        for model in preferred_models:
+            if model in available_models:
+                model_to_use = model
+                break
+        
+        if not model_to_use and available_models:
+            model_to_use = available_models[0]
+        
+        if not model_to_use:
+            model_to_use = "llama-3.2-90b-vision-preview"
+        
+        st.caption(f"🔑 Using Groq API - Model: {model_to_use} ♾️")
+        
     except KeyError:
         st.error("⚠️ GROQ_API_KEY not found in Streamlit Secrets!")
         st.info("📌 Steps to fix:")
@@ -309,7 +334,7 @@ def show_main_app():
                     """
                     
                     message = client.chat.completions.create(
-                        model="gemma2-9b-it",
+                        model=model_to_use,
                         messages=[
                             {"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}
                         ],
@@ -356,7 +381,7 @@ def show_main_app():
                     """
                     
                     message = client.chat.completions.create(
-                        model="gemma2-9b-it",
+                        model=model_to_use,
                         messages=[
                             {"role": "user", "content": prompt}
                         ],
@@ -396,7 +421,7 @@ def show_main_app():
             
             try:
                 message = client.chat.completions.create(
-                    model="gemma2-9b-it",
+                    model=model_to_use,
                     messages=[
                         {"role": "user", "content": prompt}
                     ],
