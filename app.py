@@ -299,7 +299,26 @@ def show_main_app():
         st.error(f"⚠️ Error: {str(e)}")
         return
     
-    def universal_solver(question_text=None, file_obj=None, file_type=None):
+    def remove_latex_formatting(text):
+        """Convert LaTeX to plain English text"""
+        import re
+        
+        # Remove LaTeX delimiters
+        text = text.replace('\\cdot', '*')
+        text = text.replace('\\frac{', '(')
+        text = text.replace('}{', '/')
+        text = text.replace('}', '')
+        text = text.replace('\\text{', '')
+        text = text.replace('[', '')
+        text = text.replace(']', '')
+        text = text.replace('\\', '')
+        text = text.replace('cot', '*')
+        
+        # Remove common LaTeX patterns
+        text = re.sub(r'P\(([^)]+)\)', r'Probability of \1', text)
+        text = re.sub(r'P\[([^\]]+)\]', r'Probability of \1', text)
+        
+        return text
         
         if file_obj is not None:
             # File-based problem
@@ -359,7 +378,9 @@ def show_main_app():
                         ],
                         max_tokens=512,
                     )
-                    return message.choices[0].message.content
+                    response_text = message.choices[0].message.content
+                    response_text = remove_latex_formatting(response_text)
+                    return response_text
                 except Exception as e:
                     return f"Error processing image: {str(e)}"
             
@@ -405,7 +426,9 @@ Problem: {question_text}"""
                         ],
                         max_tokens=512,
                     )
-                    return message.choices[0].message.content
+                    response_text = message.choices[0].message.content
+                    response_text = remove_latex_formatting(response_text)
+                    return response_text
                 except Exception as e:
                     return f"Error processing PDF: {str(e)}"
             
@@ -445,7 +468,9 @@ Problem: {question_text}"""
                     ],
                     max_tokens=512,
                 )
-                return message.choices[0].message.content
+                response_text = message.choices[0].message.content
+                response_text = remove_latex_formatting(response_text)
+                return response_text
             except Exception as e:
                 return f"Error: {str(e)}"
     
