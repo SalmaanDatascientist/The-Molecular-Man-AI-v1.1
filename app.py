@@ -127,21 +127,37 @@ def remove_latex(text):
     text = text.replace('{', '').replace('}', '')
     return text
 
-def solve_problem(groq_client, model, question_text, file_obj=None, file_type=None):
-    """Main solver function"""
+def solve_problem(groq_client, question_text, file_obj=None, file_type=None):
+    """Optimized solver using 512 tokens efficiently"""
     
     try:
+        # Optimized prompt that fits in 512 tokens but delivers maximum value
+        base_prompt = """You are Aya, expert tutor. Answer concisely but completely:
+
+For the PROBLEM below, provide:
+1) CONCEPT: Simple explanation (2 lines)
+2) EXAMPLE: One real-life example (2 lines)  
+3) SOLUTION: Step-by-step (4-5 steps, 1 line each)
+4) ANSWER: Clear final answer (1 line)
+5) TIP: One common mistake to avoid (1 line)
+
+Use plain English ONLY. No symbols, no formulas."""
+
         if file_type == "image" and file_obj:
             try:
                 image = Image.open(file_obj)
                 buffered = io.BytesIO()
                 image.save(buffered, format="PNG")
                 img_base64 = base64.standard_b64encode(buffered.getvalue()).decode("utf-8")
-                prompt = "Explain this problem clearly in plain English. No math symbols."
+                
+                prompt = base_prompt + "\n\nSOLVE THE PROBLEM IN THIS IMAGE:"
+                
+                model = "mixtral-8x7b-32768"
                 message = groq_client.chat.completions.create(
                     model=model,
-                    messages=[{"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}],
+                    messages=[{"role": "user", "content": prompt + f"\n{img_base64[:50]}..."}],
                     max_tokens=512,
+                    temperature=0.7
                 )
             except Exception as e:
                 return f"Error: {str(e)}"
@@ -151,25 +167,31 @@ def solve_problem(groq_client, model, question_text, file_obj=None, file_type=No
                 import PyPDF2
                 pdf_reader = PyPDF2.PdfReader(file_obj)
                 pdf_text = ""
-                for page_num in range(len(pdf_reader.pages)):
+                for page_num in range(min(2, len(pdf_reader.pages))):
                     page = pdf_reader.pages[page_num]
-                    pdf_text += page.extract_text()
+                    pdf_text += page.extract_text()[:500]  # Limit text
                 
-                prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem:\n{pdf_text}"
+                prompt = base_prompt + f"\n\nPROBLEM:\n{pdf_text}"
+                
+                model = "mixtral-8x7b-32768"
                 message = groq_client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=512,
+                    temperature=0.7
                 )
             except Exception as e:
                 return f"Error: {str(e)}"
         
         else:
-            prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem: {question_text}"
+            prompt = base_prompt + f"\n\nPROBLEM:\n{question_text}"
+            
+            model = "mixtral-8x7b-32768"
             message = groq_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=512,
+                temperature=0.7
             )
         
         response_text = message.choices[0].message.content
@@ -177,7 +199,7 @@ def solve_problem(groq_client, model, question_text, file_obj=None, file_type=No
         return response_text
     
     except Exception as e:
-        return f"❌ Error: {str(e)}. Please try again or contact support."
+        return f"❌ Error: {str(e)}"
 
 # --- LOGIN PAGE ---
 def show_login_page():
@@ -273,33 +295,10 @@ def show_main_app():
     try:
         groq_api_key = st.secrets["GROQ_API_KEY"]
         groq_client = Groq(api_key=groq_api_key)
-        
-        available_models = []
-        try:
-            models = groq_client.models.list()
-            available_models = [m.id for m in models.data]
-        except:
-            available_models = []
-        
-        model_to_use = None
-        for pref in ["gpt-4-turbo", "gpt-3.5-turbo", "llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"]:
-            try:
-                if pref in available_models:
-                    model_to_use = pref
-                    break
-            except:
-                pass
-        
-        if not model_to_use and available_models:
-            model_to_use = available_models[0]
-        if not model_to_use:
-            model_to_use = "gpt-3.5-turbo"
-        
-        st.caption(f"🔑 Using Groq API - Model: {model_to_use}")
-        
+        st.caption("🔑 Using Groq API - Optimized for Quality")
     except KeyError:
         st.error("⚠️ GROQ_API_KEY not found in Streamlit Secrets!")
-        st.info("Add your key: https://console.groq.com/keys")
+        st.info("Get key from: https://console.groq.com/keys")
         return
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")
@@ -333,7 +332,7 @@ def show_main_app():
                 st.warning("❌ Please enter a question first.")
             else:
                 with st.spinner("🤖 Aya is busy doing work..."):
-                    solution = solve_problem(groq_client, model_to_use, user_question)
+                    solution = solve_problem(groq_client, user_question)
                     st.markdown("---")
                     st.markdown("## 💡 Solution")
                     st.markdown(solution)
@@ -343,7 +342,7 @@ def show_main_app():
                 st.warning(f"❌ Please upload a {input_type.lower()} first.")
             else:
                 with st.spinner(f"🤖 Aya is busy doing work..."):
-                    solution = solve_problem(groq_client, model_to_use, None, uploaded_file, file_type)
+                    solution = solve_problem(groq_client, None, uploaded_file, file_type)
                     st.markdown("---")
                     st.markdown("## 💡 Solution")
                     st.markdown(solution)
