@@ -308,7 +308,7 @@ def show_main_app():
                     (The final result)
                     """
                     
-                    message = client.messages.create(
+                    message = client.chat.completions.create(
                         model="mixtral-8x7b-32768",
                         messages=[
                             {"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}
@@ -355,7 +355,7 @@ def show_main_app():
                     {pdf_text}
                     """
                     
-                    message = client.messages.create(
+                    message = client.chat.completions.create(
                         model="mixtral-8x7b-32768",
                         messages=[
                             {"role": "user", "content": prompt}
@@ -395,7 +395,7 @@ def show_main_app():
             """
             
             try:
-                message = client.messages.create(
+                message = client.chat.completions.create(
                     model="mixtral-8x7b-32768",
                     messages=[
                         {"role": "user", "content": prompt}
