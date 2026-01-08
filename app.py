@@ -5,6 +5,8 @@ import hashlib
 from datetime import datetime
 import uuid
 import os
+import base64
+from PIL import Image
 
 # --- PAGE SETUP ---
 st.set_page_config(
@@ -257,70 +259,71 @@ def show_main_app():
     st.title("Aya - Universal Problem Solver")
     st.caption("Paste any problem below (Algebra, Geometry, Physics, Chemistry, etc.)")
     
-    # --- API CONFIGURATION ---
+    # --- API CONFIGURATION (Multiple Google Gemini Keys) ---
     try:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        genai.configure(api_key=api_key)
-    except:
-        st.error("⚠️ API Key missing! Add 'GOOGLE_API_KEY' to Streamlit Secrets.")
+        # Get all API keys from secrets (API_KEY_1, API_KEY_2, etc.)
+        api_keys = []
+        i = 1
+        while f"GOOGLE_API_KEY_{i}" in st.secrets:
+            api_keys.append(st.secrets[f"GOOGLE_API_KEY_{i}"])
+            i += 1
+        
+        # Fallback to single API_KEY if no numbered keys
+        if not api_keys and "GOOGLE_API_KEY" in st.secrets:
+            api_keys = [st.secrets["GOOGLE_API_KEY"]]
+        
+        if not api_keys:
+            st.error("⚠️ No API Keys found! Add GOOGLE_API_KEY_1, GOOGLE_API_KEY_2, etc. to Streamlit Secrets.")
+            st.info("Get free Google API keys from: https://aistudio.google.com/app/apikeys")
+            return
+        
+        # Initialize session state for key tracking
+        if "api_key_index" not in st.session_state:
+            st.session_state.api_key_index = 0
+        
+        # Show which key is active
+        st.caption(f"🔑 Using API Key #{st.session_state.api_key_index + 1} of {len(api_keys)}")
+        
+    except Exception as e:
+        st.error(f"⚠️ Error loading API Keys: {str(e)}")
         return
     
-    def get_working_model():
-        try:
-            available_models = []
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    available_models.append(m.name)
-            
-            preferences = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
-            for pref in preferences:
-                if pref in available_models:
-                    return genai.GenerativeModel(pref)
-            
-            if available_models:
-                return genai.GenerativeModel(available_models[0])
-        except:
-            return genai.GenerativeModel('gemini-1.5-flash')
-        return None
-    
     def universal_solver(question_text=None, file_obj=None, file_type=None):
-        model = get_working_model()
-        if not model: 
-            return "Error: No AI models found."
+        global api_keys, api_key_index
+        
+        prompt = ""
         
         if file_obj is not None:
             # File-based problem (Image, PDF, or Video)
             
             if file_type == "image":
                 # Image file
-                from PIL import Image
-                image = Image.open(file_obj)
-                
-                prompt = """You are an expert Math Tutor for 'The Molecular Man'. 
-                Look at this image carefully and solve the problem shown in it step-by-step. 
-                Use LaTeX for math equations (enclose in $ signs).
-                
-                Format your response exactly like this:
-                
-                ### 🧠 Topic Identification
-                (Name of the topic)
-                
-                ### 📊 Given Data
-                (List variables/information from the image)
-                
-                ### 📐 Formula & Logic
-                (Formulas used)
-                
-                ### 📝 Step-by-Step Solution
-                (Detailed steps)
-                
-                ### ✅ Final Answer
-                (The final result)
-                """
-                
                 try:
-                    response = model.generate_content([prompt, image])
-                    return response.text
+                    image = Image.open(file_obj)
+                    
+                    prompt = """You are an expert Math Tutor for 'The Molecular Man'. 
+                    Look at this image carefully and solve the problem shown in it step-by-step. 
+                    Use LaTeX for math equations (enclose in $ signs).
+                    
+                    Format your response exactly like this:
+                    
+                    ### 🧠 Topic Identification
+                    (Name of the topic)
+                    
+                    ### 📊 Given Data
+                    (List variables/information from the image)
+                    
+                    ### 📐 Formula & Logic
+                    (Formulas used)
+                    
+                    ### 📝 Step-by-Step Solution
+                    (Detailed steps)
+                    
+                    ### ✅ Final Answer
+                    (The final result)
+                    """
+                    
+                    return try_api_keys(image, prompt, file_type)
                 except Exception as e:
                     return f"Error processing image: {str(e)}"
             
@@ -362,35 +365,41 @@ def show_main_app():
                     {pdf_text}
                     """
                     
-                    response = model.generate_content(prompt)
-                    return response.text
+                    return try_api_keys(None, prompt, "text")
                 except Exception as e:
                     return f"Error processing PDF: {str(e)}"
             
             elif file_type == "video":
                 # Video file
                 import cv2
-                import numpy as np
-                from PIL import Image as PILImage
+                import io
                 
                 try:
                     # Read video and extract frames
-                    video = cv2.VideoCapture(file_obj)
+                    video_bytes = file_obj.read()
+                    video_path = f"/tmp/temp_video_{uuid.uuid4()}.mp4"
+                    
+                    with open(video_path, "wb") as f:
+                        f.write(video_bytes)
+                    
+                    video = cv2.VideoCapture(video_path)
                     frames = []
                     frame_count = 0
+                    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
                     
-                    while len(frames) < 5:  # Extract up to 5 key frames
+                    while len(frames) < 3:  # Extract 3 key frames
                         ret, frame = video.read()
                         if not ret:
                             break
                         
-                        if frame_count % max(1, int(video.get(cv2.CAP_PROP_FRAME_COUNT)) // 5) == 0:
+                        if frame_count % max(1, total_frames // 3) == 0:
                             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            frames.append(PILImage.fromarray(frame_rgb))
+                            frames.append(Image.fromarray(frame_rgb))
                         
                         frame_count += 1
                     
                     video.release()
+                    os.remove(video_path)
                     
                     if not frames:
                         return "Error: Could not extract frames from video"
@@ -417,10 +426,7 @@ def show_main_app():
                     (The final result)
                     """
                     
-                    # Send prompt with multiple frames
-                    content = [prompt] + frames
-                    response = model.generate_content(content)
-                    return response.text
+                    return try_api_keys(frames, prompt, "video")
                 
                 except Exception as e:
                     return f"Error processing video: {str(e)}"
@@ -450,11 +456,42 @@ def show_main_app():
             
             **Question:** "{question_text}"
             """
+            return try_api_keys(None, prompt, "text")
+    
+    def try_api_keys(content, prompt, content_type):
+        """Try multiple API keys silently until one works"""
+        global api_keys, api_key_index
+        
+        for attempt in range(len(api_keys)):
+            current_key_index = (st.session_state.api_key_index + attempt) % len(api_keys)
+            api_key = api_keys[current_key_index]
+            
             try:
-                response = model.generate_content(prompt)
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                if content_type == "text":
+                    response = model.generate_content(prompt)
+                elif content_type == "image":
+                    response = model.generate_content([prompt, content])
+                elif content_type == "video":
+                    response = model.generate_content([prompt] + content)
+                
+                # Success! Update the key index
+                st.session_state.api_key_index = current_key_index
                 return response.text
+                
             except Exception as e:
-                return f"Error: {str(e)}"
+                error_msg = str(e)
+                
+                # Check if it's a quota error - silently switch without warning
+                if "429" in error_msg or "quota" in error_msg.lower():
+                    # Silent switch - no warning shown to user
+                    continue
+                else:
+                    return f"Error: {error_msg}"
+        
+        return "❌ All API keys have exceeded their quota. Please add more API keys or wait for quota reset."
     
     # --- INPUT SECTION ---
     st.markdown("### 📝 How to Solve?")
@@ -502,7 +539,7 @@ def show_main_app():
             if not user_question or not user_question.strip():
                 st.warning("❌ Please enter a question first.")
             else:
-                with st.spinner("🤖 Aya is analyzing..."):
+                with st.spinner("🤖 Aya is busy doing work..."):
                     solution = universal_solver(question_text=user_question)
                     
                     st.markdown("---")
@@ -518,7 +555,7 @@ def show_main_app():
             if uploaded_file is None:
                 st.warning(f"❌ Please upload a {input_type.lower()} first.")
             else:
-                with st.spinner(f"🤖 Aya is analyzing the {file_type}..."):
+                with st.spinner(f"🤖 Aya is busy doing work..."):
                     solution = universal_solver(file_obj=uploaded_file, file_type=file_type)
                     
                     st.markdown("---")
