@@ -1,5 +1,5 @@
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 import json
 import hashlib
 from datetime import datetime
@@ -7,6 +7,7 @@ import uuid
 import os
 from PIL import Image
 import base64
+import io
 
 # --- PAGE SETUP ---
 st.set_page_config(
@@ -71,8 +72,6 @@ if "username" not in st.session_state:
     st.session_state.username = None
 if "device_id" not in st.session_state:
     st.session_state.device_id = str(uuid.uuid4())
-if "api_key_index" not in st.session_state:
-    st.session_state.api_key_index = 0
 
 # --- FILE STORAGE ---
 USERS_FILE = "users_database.json"
@@ -80,7 +79,6 @@ SESSIONS_FILE = "active_sessions.json"
 
 def create_empty_database():
     if not os.path.exists(USERS_FILE):
-        # Create with default admin user
         default_user = {
             "Mohammed": hashlib.sha256("Molsalmaan@9292".encode()).hexdigest()
         }
@@ -164,7 +162,6 @@ def show_login_page():
     with col2:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
         
-        # Welcome banner
         st.markdown('<div class="welcome-text">🧮</div>', unsafe_allow_html=True)
         st.markdown('<div class="subtitle">The Molecular Man AI</div>', unsafe_allow_html=True)
         st.markdown('<div class="subtitle">Aya - Universal Problem Solver</div>', unsafe_allow_html=True)
@@ -172,7 +169,6 @@ def show_login_page():
         
         st.markdown("---")
         
-        # Login form
         tab1, tab2 = st.tabs(["🔓 Login", "🆕 Create Account"])
         
         with tab1:
@@ -261,106 +257,34 @@ def show_main_app():
     st.title("Aya - Universal Problem Solver")
     st.caption("Paste any problem below (Algebra, Geometry, Physics, Chemistry, etc.)")
     
-    # --- API CONFIGURATION (Multiple Google Gemini Keys) ---
+    # --- GROQ API CONFIGURATION ---
     try:
-        # Get all API keys from secrets (API_KEY_1, API_KEY_2, etc.)
-        api_keys = []
-        i = 1
-        while f"GOOGLE_API_KEY_{i}" in st.secrets:
-            api_keys.append(st.secrets[f"GOOGLE_API_KEY_{i}"])
-            i += 1
-        
-        # Fallback to single API_KEY if no numbered keys
-        if not api_keys and "GOOGLE_API_KEY" in st.secrets:
-            api_keys = [st.secrets["GOOGLE_API_KEY"]]
-        
-        if not api_keys:
-            st.error("⚠️ No API Keys found! Add GOOGLE_API_KEY_1, GOOGLE_API_KEY_2, etc. to Streamlit Secrets.")
-            st.info("Get free Google API keys from: https://aistudio.google.com/app/apikeys")
-            return
-        
-        # Show which keys are loaded
-        st.caption(f"🔑 Loaded {len(api_keys)} API keys")
-        
-    except Exception as e:
-        st.error(f"⚠️ Error loading API Keys: {str(e)}")
+        groq_api_key = st.secrets["GROQ_API_KEY"]
+        client = Groq(api_key=groq_api_key)
+        st.caption("🔑 Using Groq API - Unlimited Free Requests ♾️")
+    except KeyError:
+        st.error("⚠️ GROQ_API_KEY not found in Streamlit Secrets!")
+        st.info("📌 Steps to fix:")
+        st.info("1. Go to your Streamlit app → Click 'Manage app' (bottom right)")
+        st.info("2. Click 'Secrets'")
+        st.info("3. Add: GROQ_API_KEY = \"your_key_here\"")
+        st.info("4. Get your key from: https://console.groq.com/keys")
         return
-    
-    def try_api_keys(content, prompt, content_type):
-        """Try multiple API keys silently until one works"""
-        
-        for attempt in range(len(api_keys)):
-            current_key_index = (st.session_state.api_key_index + attempt) % len(api_keys)
-            api_key = api_keys[current_key_index]
-            
-            try:
-                genai.configure(api_key=api_key)
-                
-                # Find available model
-                available_models = []
-                try:
-                    for m in genai.list_models():
-                        if 'generateContent' in m.supported_generation_methods:
-                            available_models.append(m.name)
-                except:
-                    available_models = ['models/gemini-2.0-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
-                
-                # Try models in order of preference
-                model_name = None
-                for pref in ['models/gemini-2.0-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']:
-                    if pref in available_models or not available_models:
-                        model_name = pref
-                        break
-                
-                if not model_name and available_models:
-                    model_name = available_models[0]
-                
-                if not model_name:
-                    model_name = 'models/gemini-2.0-flash'
-                
-                model = genai.GenerativeModel(model_name)
-                
-                if content_type == "text":
-                    response = model.generate_content(prompt)
-                elif content_type == "image":
-                    response = model.generate_content([prompt, content])
-                elif content_type == "video":
-                    response = model.generate_content([prompt] + content)
-                
-                # Success! Update the key index for next use
-                st.session_state.api_key_index = (current_key_index + 1) % len(api_keys)
-                return response.text
-                
-            except Exception as e:
-                error_msg = str(e)
-                
-                # Check if it's a quota error (429) or invalid key
-                if "429" in error_msg or "quota" in error_msg.lower():
-                    # Quota exceeded, try next key
-                    continue
-                elif "API_KEY_INVALID" in error_msg or "API key not valid" in error_msg:
-                    # Invalid key, skip to next
-                    continue
-                elif "RESOURCE_EXHAUSTED" in error_msg:
-                    # Resource exhausted, try next key
-                    continue
-                else:
-                    # Other error, return it
-                    return f"Error: {error_msg}"
-        
-        return "⚠️ All API keys are exhausted. Please wait a few hours for quota reset or add more API keys."
+    except Exception as e:
+        st.error(f"⚠️ Error: {str(e)}")
+        return
     
     def universal_solver(question_text=None, file_obj=None, file_type=None):
         
-        prompt = ""
-        
         if file_obj is not None:
-            # File-based problem (Image, PDF, or Video)
+            # File-based problem
             
             if file_type == "image":
-                # Image file
                 try:
                     image = Image.open(file_obj)
+                    buffered = io.BytesIO()
+                    image.save(buffered, format="PNG")
+                    img_base64 = base64.standard_b64encode(buffered.getvalue()).decode("utf-8")
                     
                     prompt = """You are an expert Math Tutor for 'The Molecular Man'. 
                     Look at this image carefully and solve the problem shown in it step-by-step. 
@@ -384,15 +308,20 @@ def show_main_app():
                     (The final result)
                     """
                     
-                    return try_api_keys(image, prompt, "image")
+                    message = client.messages.create(
+                        model="mixtral-8x7b-32768",
+                        messages=[
+                            {"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}
+                        ],
+                        max_tokens=2000,
+                    )
+                    return message.choices[0].message.content
                 except Exception as e:
                     return f"Error processing image: {str(e)}"
             
             elif file_type == "pdf":
-                # PDF file
-                import PyPDF2
-                
                 try:
+                    import PyPDF2
                     pdf_reader = PyPDF2.PdfReader(file_obj)
                     pdf_text = ""
                     
@@ -426,76 +355,23 @@ def show_main_app():
                     {pdf_text}
                     """
                     
-                    return try_api_keys(None, prompt, "text")
+                    message = client.messages.create(
+                        model="mixtral-8x7b-32768",
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=2000,
+                    )
+                    return message.choices[0].message.content
                 except Exception as e:
                     return f"Error processing PDF: {str(e)}"
             
             elif file_type == "video":
-                # Video file
-                import cv2
-                import io
-                
-                try:
-                    # Read video and extract frames
-                    video_bytes = file_obj.read()
-                    video_path = f"/tmp/temp_video_{uuid.uuid4()}.mp4"
-                    
-                    with open(video_path, "wb") as f:
-                        f.write(video_bytes)
-                    
-                    video = cv2.VideoCapture(video_path)
-                    frames = []
-                    frame_count = 0
-                    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-                    
-                    while len(frames) < 3:  # Extract 3 key frames
-                        ret, frame = video.read()
-                        if not ret:
-                            break
-                        
-                        if frame_count % max(1, total_frames // 3) == 0:
-                            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            frames.append(Image.fromarray(frame_rgb))
-                        
-                        frame_count += 1
-                    
-                    video.release()
-                    os.remove(video_path)
-                    
-                    if not frames:
-                        return "Error: Could not extract frames from video"
-                    
-                    prompt = """You are an expert Math Tutor for 'The Molecular Man'. 
-                    Look at these video frames and analyze the problem or content shown. 
-                    Solve any problems step-by-step. Use LaTeX for math equations (enclose in $ signs).
-                    
-                    Format your response exactly like this:
-                    
-                    ### 🧠 Topic Identification
-                    (Name of the topic)
-                    
-                    ### 📊 Given Data
-                    (List variables/information from video frames)
-                    
-                    ### 📐 Formula & Logic
-                    (Formulas used)
-                    
-                    ### 📝 Step-by-Step Solution
-                    (Detailed steps)
-                    
-                    ### ✅ Final Answer
-                    (The final result)
-                    """
-                    
-                    return try_api_keys(frames, prompt, "video")
-                
-                except Exception as e:
-                    return f"Error processing video: {str(e)}"
+                return "⚠️ Video analysis not available with Groq. Please upload an image of the problem instead."
         
         else:
             # Text-based problem
-            prompt = f"""
-            You are an expert Math Tutor for 'The Molecular Man'. 
+            prompt = f"""You are an expert Math Tutor for 'The Molecular Man'. 
             Solve this problem step-by-step. Use LaTeX for math equations (enclose in $ signs).
             
             Format your response exactly like this:
@@ -517,14 +393,25 @@ def show_main_app():
             
             **Question:** "{question_text}"
             """
-            return try_api_keys(None, prompt, "text")
+            
+            try:
+                message = client.messages.create(
+                    model="mixtral-8x7b-32768",
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=2000,
+                )
+                return message.choices[0].message.content
+            except Exception as e:
+                return f"Error: {str(e)}"
     
     # --- INPUT SECTION ---
     st.markdown("### 📝 How to Solve?")
     
     input_type = st.radio(
         "Choose input type:", 
-        ["📄 Text Problem", "🖼️ Upload Image", "📕 Upload PDF", "🎥 Upload Video"], 
+        ["📄 Text Problem", "🖼️ Upload Image", "📕 Upload PDF"], 
         horizontal=True
     )
     
@@ -550,14 +437,6 @@ def show_main_app():
         if uploaded_file:
             st.info(f"📄 PDF Uploaded: {uploaded_file.name}")
             file_type = "pdf"
-    
-    elif input_type == "🎥 Upload Video":
-        uploaded_file = st.file_uploader("Upload a video with problems", type=["mp4", "avi", "mov", "mkv", "flv", "wmv"])
-        if uploaded_file:
-            st.info(f"🎥 Video Uploaded: {uploaded_file.name}")
-            file_type = "video"
-            # Show video preview
-            st.video(uploaded_file)
     
     # --- SOLVE BUTTON ---
     if st.button("Solve Problem 🚀", type="primary", use_container_width=True):
