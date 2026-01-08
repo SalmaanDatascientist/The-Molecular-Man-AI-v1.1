@@ -530,11 +530,7 @@ def show_main_app():
                     st.markdown("---")
                     st.markdown("## 💡 Detailed Solution")
                     
-                    with st.container():
-                        st.markdown('<div class="solution-box">', unsafe_allow_html=True)
-                        st.markdown(solution)
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
+                    st.markdown(solution)
                     st.success("✅ Solved by Aya!")
         else:
             if uploaded_file is None:
@@ -546,11 +542,7 @@ def show_main_app():
                     st.markdown("---")
                     st.markdown("## 💡 Detailed Solution")
                     
-                    with st.container():
-                        st.markdown('<div class="solution-box">', unsafe_allow_html=True)
-                        st.markdown(solution)
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
+                    st.markdown(solution)
                     st.success("✅ Solved by Aya!")
     
     # --- FOOTER ---
