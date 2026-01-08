@@ -1,0 +1,14 @@
+name: Keep App Alive
+
+on:
+  schedule:
+    # Runs every 4 hours (0 */4 * * *)
+    - cron: "0 */10 * * *"
+  workflow_dispatch: # Allows you to run this manually if needed
+
+jobs:
+  ping_app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the app
+        run: curl https://the-molecularman-expert-tuitions.streamlit.app/
