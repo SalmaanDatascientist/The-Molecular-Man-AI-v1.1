@@ -279,8 +279,24 @@ def show_main_app():
             st.info("Get free Google API keys from: https://aistudio.google.com/app/apikeys")
             return
         
-        # Show which key is active
-        st.caption(f"🔑 Using API Key #{st.session_state.api_key_index + 1} of {len(api_keys)}")
+        # Show which keys are loaded
+        st.info(f"✅ Loaded {len(api_keys)} API keys. Testing them...")
+        
+        # Test each key quickly
+        working_keys = []
+        for i, key in enumerate(api_keys):
+            try:
+                genai.configure(api_key=key)
+                # Quick test
+                model = genai.GenerativeModel('gemini-2.0-flash')
+                working_keys.append(i + 1)
+            except Exception as e:
+                pass
+        
+        if working_keys:
+            st.success(f"🔑 Working keys: #{', #'.join(map(str, working_keys))}")
+        else:
+            st.error("❌ No working API keys found. Please check your keys.")
         
     except Exception as e:
         st.error(f"⚠️ Error loading API Keys: {str(e)}")
