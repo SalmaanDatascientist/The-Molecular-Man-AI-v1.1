@@ -282,21 +282,33 @@ def show_main_app():
         # Show which keys are loaded
         st.info(f"✅ Loaded {len(api_keys)} API keys. Testing them...")
         
-        # Test each key quickly
+        # Test each key with detailed error messages
         working_keys = []
+        error_details = []
+        
         for i, key in enumerate(api_keys):
             try:
                 genai.configure(api_key=key)
-                # Quick test
                 model = genai.GenerativeModel('gemini-2.0-flash')
+                # Try a simple test
+                response = model.generate_content("test")
                 working_keys.append(i + 1)
+                st.success(f"✅ Key #{i+1}: Working perfectly!")
             except Exception as e:
-                pass
+                error_msg = str(e)
+                st.error(f"❌ Key #{i+1}: {error_msg[:100]}")
+                error_details.append({
+                    "key": i + 1,
+                    "error": error_msg
+                })
         
         if working_keys:
-            st.success(f"🔑 Working keys: #{', #'.join(map(str, working_keys))}")
+            st.success(f"🔑 **Working keys: #{', #'.join(map(str, working_keys))}**")
         else:
-            st.error("❌ No working API keys found. Please check your keys.")
+            st.error("⚠️ **No working API keys!** Check your keys or contact support.")
+            st.write("**Error Details:**")
+            for detail in error_details:
+                st.write(f"Key #{detail['key']}: {detail['error']}")
         
     except Exception as e:
         st.error(f"⚠️ Error loading API Keys: {str(e)}")
