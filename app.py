@@ -8,6 +8,7 @@ import os
 from PIL import Image
 import base64
 import io
+import re
 
 # --- PAGE SETUP ---
 st.set_page_config(
@@ -20,13 +21,6 @@ st.markdown("""
     <style>
     .main {
         background-color: #0d1117;
-    }
-    .solution-box {
-        background-color: white; 
-        padding: 40px; 
-        border-radius: 10px; 
-        color: black;
-        border: 2px solid #e0e0e0;
     }
     .login-container {
         max-width: 500px;
@@ -49,23 +43,10 @@ st.markdown("""
         0%, 100% { text-shadow: 0 0 10px #ffd700; }
         50% { text-shadow: 0 0 20px #ffd700, 0 0 30px #ffd700; }
     }
-    .subtitle {
-        text-align: center;
-        color: #e0e0e0;
-        font-size: 20px;
-        margin-bottom: 10px;
-    }
-    .tagline {
-        text-align: center;
-        color: #b0b0b0;
-        font-size: 16px;
-        margin-bottom: 40px;
-        font-style: italic;
-    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALIZE SESSION STATE ---
+# --- INITIALIZE SESSION ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -73,7 +54,6 @@ if "username" not in st.session_state:
 if "device_id" not in st.session_state:
     st.session_state.device_id = str(uuid.uuid4())
 
-# --- FILE STORAGE ---
 USERS_FILE = "users_database.json"
 SESSIONS_FILE = "active_sessions.json"
 
@@ -93,80 +73,116 @@ def create_empty_sessions():
 create_empty_database()
 create_empty_sessions()
 
-# --- PASSWORD HASHING ---
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# --- LOGIN CHECK ---
 def login_user(username, password):
     with open(USERS_FILE, "r") as f:
         all_users = json.load(f)
-    
     if username not in all_users:
         return False
-    
-    stored_hash = all_users[username]
-    entered_hash = hash_password(password)
-    
-    return stored_hash == entered_hash
+    return all_users[username] == hash_password(password)
 
-# --- DEVICE LOCK FUNCTIONS ---
 def is_user_logged_elsewhere(username, current_device_id):
     with open(SESSIONS_FILE, "r") as f:
         sessions = json.load(f)
-    
     if username in sessions:
-        old_device_id = sessions[username]
-        if old_device_id != current_device_id:
-            return True, old_device_id
-    return False, None
+        if sessions[username] != current_device_id:
+            return True
+    return False
 
 def save_session(username, device_id):
     with open(SESSIONS_FILE, "r") as f:
         sessions = json.load(f)
-    
     sessions[username] = device_id
-    
     with open(SESSIONS_FILE, "w") as f:
         json.dump(sessions, f)
 
 def remove_session(username):
     with open(SESSIONS_FILE, "r") as f:
         sessions = json.load(f)
-    
     if username in sessions:
         del sessions[username]
-    
     with open(SESSIONS_FILE, "w") as f:
         json.dump(sessions, f)
 
-# --- ADD NEW USER ---
 def add_new_user(username, password):
     with open(USERS_FILE, "r") as f:
         all_users = json.load(f)
-    
     if username in all_users:
         return False, "Username already exists!"
-    
     all_users[username] = hash_password(password)
-    
     with open(USERS_FILE, "w") as f:
         json.dump(all_users, f)
-    
     return True, "User created successfully!"
+
+def remove_latex(text):
+    """Remove LaTeX formatting"""
+    text = text.replace('\\frac{', '(')
+    text = text.replace('\\cdot', '*')
+    text = text.replace('\\text{', '')
+    text = text.replace('}{', '/')
+    text = text.replace('\\', '')
+    text = text.replace('[', '').replace(']', '')
+    text = text.replace('{', '').replace('}', '')
+    return text
+
+def solve_problem(groq_client, model, question_text, file_obj=None, file_type=None):
+    """Main solver function"""
+    
+    if file_type == "image" and file_obj:
+        try:
+            image = Image.open(file_obj)
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            img_base64 = base64.standard_b64encode(buffered.getvalue()).decode("utf-8")
+            prompt = "Explain this problem clearly in plain English. No math symbols."
+            message = groq_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}],
+                max_tokens=512,
+            )
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    elif file_type == "pdf" and file_obj:
+        try:
+            import PyPDF2
+            pdf_reader = PyPDF2.PdfReader(file_obj)
+            pdf_text = ""
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                pdf_text += page.extract_text()
+            
+            prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem:\n{pdf_text}"
+            message = groq_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=512,
+            )
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    else:
+        prompt = f"Explain this problem clearly in plain English. No math symbols.\n\nProblem: {question_text}"
+        message = groq_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+        )
+    
+    response_text = message.choices[0].message.content
+    response_text = remove_latex(response_text)
+    return response_text
 
 # --- LOGIN PAGE ---
 def show_login_page():
     col1, col2, col3 = st.columns([1, 3, 1])
-    
     with col2:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        
         st.markdown('<div class="welcome-text">🧮</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">The Molecular Man AI</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">Aya - Universal Problem Solver</div>', unsafe_allow_html=True)
-        st.markdown('<div class="tagline">"Hello! I\'m Aya. To access my expert tuition solutions, please authenticate first."</div>', unsafe_allow_html=True)
-        
+        st.markdown('<div style="text-align: center; color: #e0e0e0; font-size: 20px;">The Molecular Man AI</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center; color: #b0b0b0; font-size: 16px;">Aya - Universal Problem Solver</div>', unsafe_allow_html=True)
         st.markdown("---")
         
         tab1, tab2 = st.tabs(["🔓 Login", "🆕 Create Account"])
@@ -180,14 +196,9 @@ def show_login_page():
                 if not username or not password:
                     st.error("❌ Please enter both username and password")
                 elif login_user(username, password):
-                    device_id = st.session_state.device_id
-                    logged_elsewhere, old_device = is_user_logged_elsewhere(username, device_id)
-                    
-                    if logged_elsewhere:
-                        st.info("⚠️ Your previous session has been closed.")
-                    
-                    save_session(username, device_id)
-                    
+                    if is_user_logged_elsewhere(username, st.session_state.device_id):
+                        st.info("⚠️ Previous session closed.")
+                    save_session(username, st.session_state.device_id)
                     st.session_state.logged_in = True
                     st.session_state.username = username
                     st.success("✅ Welcome to Aya!")
@@ -204,10 +215,8 @@ def show_login_page():
             new_password = st.text_input("🔐 New Password", type="password", key="create_pass")
             confirm_password = st.text_input("🔐 Confirm Password", type="password", key="confirm_pass")
             
-            ADMIN_SECRET = "Ayasalmaan@9292"
-            
             if st.button("Create Account 🔑", use_container_width=True, type="primary"):
-                if secret_key != ADMIN_SECRET:
+                if secret_key != "Ayasalmaan@9292":
                     st.error("❌ Invalid admin secret key")
                 elif not new_username or not new_password:
                     st.error("❌ Please fill all fields")
@@ -226,7 +235,6 @@ def show_login_page():
 
 # --- MAIN APP ---
 def show_main_app():
-    # HEADER WITH LOGOUT
     col1, col2, col3 = st.columns([1.2, 4, 1], gap="medium", vertical_alignment="center")
     
     with col1:
@@ -257,267 +265,70 @@ def show_main_app():
     st.title("Aya - Universal Problem Solver")
     st.caption("Paste any problem below (Algebra, Geometry, Physics, Chemistry, etc.)")
     
-    # --- GROQ API CONFIGURATION ---
+    # --- API SETUP ---
     try:
         groq_api_key = st.secrets["GROQ_API_KEY"]
-        client = Groq(api_key=groq_api_key)
+        groq_client = Groq(api_key=groq_api_key)
         
-        # Auto-detect available models
         available_models = []
         try:
-            models = client.models.list()
+            models = groq_client.models.list()
             available_models = [m.id for m in models.data]
         except:
             available_models = []
         
-        # Try to find a working model
         model_to_use = None
-        preferred_models = ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768", "gemma-7b-it"]
-        
-        for model in preferred_models:
-            if model in available_models:
-                model_to_use = model
+        for pref in ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"]:
+            if pref in available_models:
+                model_to_use = pref
                 break
         
         if not model_to_use and available_models:
             model_to_use = available_models[0]
-        
         if not model_to_use:
             model_to_use = "llama3-8b-8192"
         
-        st.caption(f"🔑 Using Groq API - Model: {model_to_use} ♾️")
+        st.caption(f"🔑 Using Groq API - Model: {model_to_use}")
         
     except KeyError:
         st.error("⚠️ GROQ_API_KEY not found in Streamlit Secrets!")
-        st.info("📌 Steps to fix:")
-        st.info("1. Go to your Streamlit app → Click 'Manage app' (bottom right)")
-        st.info("2. Click 'Secrets'")
-        st.info("3. Add: GROQ_API_KEY = \"your_key_here\"")
-        st.info("4. Get your key from: https://console.groq.com/keys")
+        st.info("Add your key: https://console.groq.com/keys")
         return
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")
         return
     
-    def remove_latex_formatting(text):
-        """Convert LaTeX to plain English text"""
-        import re
-        
-        # Remove LaTeX delimiters
-        text = text.replace('\\cdot', '*')
-        text = text.replace('\\frac{', '(')
-        text = text.replace('}{', '/')
-        text = text.replace('}', '')
-        text = text.replace('\\text{', '')
-        text = text.replace('[', '')
-        text = text.replace(']', '')
-        text = text.replace('\\', '')
-        text = text.replace('cot', '*')
-        
-        # Remove common LaTeX patterns
-        text = re.sub(r'P\(([^)]+)\)', r'Probability of \1', text)
-        text = re.sub(r'P\[([^\]]+)\]', r'Probability of \1', text)
-        
-        return text
-        
-        if file_obj is not None:
-            # File-based problem
-            
-            if file_type == "image":
-                try:
-                    image = Image.open(file_obj)
-                    buffered = io.BytesIO()
-                    image.save(buffered, format="PNG")
-                    img_base64 = base64.standard_b64encode(buffered.getvalue()).decode("utf-8")
-                    
-                    prompt = """You are 'Aya', an expert and extremely patient Chemistry/Math Tutor from 'The Molecular Man Expert Tuition Solutions'. 
-                    You are teaching a student who is STRUGGLING with this topic. Explain EVERYTHING in the simplest way possible.
-                    
-                    ⚠️ CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
-                    - NEVER use LaTeX or math symbols in your explanation
-                    - Write ALL math equations in plain English words first
-                    - Then show the equation with words like: M becomes M to the power n plus, plus n times e to the power minus
-                    - ASSUME THE STUDENT KNOWS ABSOLUTELY NOTHING
-                    - Use everyday analogies from their daily life (cooking, money, toys, sports, etc.)
-                    - Break EVERY concept into the smallest possible steps
-                    - Explain WHY each step matters
-                    - Use MULTIPLE REAL LIFE EXAMPLES (at least 5 examples)
-                    - Make it LONG and DETAILED - write at least 800-1000 words
-                    - Include practice problems
-                    - Identify common student mistakes
-                    
-                    Format your response with these exact sections:
-                    
-                    ### 🧠 What This Topic Is About
-                    (Simplest explanation possible with everyday analogy)
-                    
-                    ### 📚 Real Life Examples
-                    (5+ concrete examples from daily life)
-                    
-                    ### 🔍 Step-By-Step Detailed Explanation
-                    (Ultra detailed, break into micro-steps)
-                    
-                    ### 💪 Why This Matters
-                    (Practical applications)
-                    
-                    ### ✅ Final Summary
-                    (Clear conclusion)
-                    
-                    ### 🎯 Practice Problems
-                    (3-5 problems to try)
-                    
-                    ### ⚠️ Common Mistakes to Avoid
-                    (What students often get wrong)
-                    
-                    Now explain this problem in EXTREME DETAIL. Make it LONG and USEFUL."""
-                    
-                    message = client.chat.completions.create(
-                        model=model_to_use,
-                        messages=[
-                            {"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}
-                        ],
-                        max_tokens=512,
-                    )
-                    response_text = message.choices[0].message.content
-                    response_text = remove_latex_formatting(response_text)
-                    return response_text
-                except Exception as e:
-                    return f"Error processing image: {str(e)}"
-            
-            elif file_type == "pdf":
-                try:
-                    import PyPDF2
-                    pdf_reader = PyPDF2.PdfReader(file_obj)
-                    pdf_text = ""
-                    
-                    for page_num in range(len(pdf_reader.pages)):
-                        page = pdf_reader.pages[page_num]
-                        pdf_text += f"\n--- Page {page_num + 1} ---\n"
-                        pdf_text += page.extract_text()
-                    
-                    prompt = f"""You are Aya, an expert tutor. Explain this concept simply and clearly.
-
-⚠️ IMPORTANT: Do NOT use any math symbols, brackets, or formulas. Write everything in plain English words.
-
-Use this format:
-### What Is This?
-Simple explanation with everyday analogy
-
-### Real Examples  
-2-3 practical examples
-
-### How It Works
-Step-by-step explanation using ONLY words, no symbols
-
-### Key Points
-Main takeaways
-
-### Final Answer
-Write the answer in plain English words, for example: "The answer is twenty eight divided by sixty nine, which equals approximately forty point six percent" - NOT as a formula
-
-Keep explanations clear, simple, and practical. Use only plain English words.
-
-Problem: {question_text}"""
-                    
-                    message = client.chat.completions.create(
-                        model=model_to_use,
-                        messages=[
-                            {"role": "user", "content": prompt}
-                        ],
-                        max_tokens=512,
-                    )
-                    response_text = message.choices[0].message.content
-                    response_text = remove_latex_formatting(response_text)
-                    return response_text
-                except Exception as e:
-                    return f"Error processing PDF: {str(e)}"
-            
-            elif file_type == "video":
-                return "⚠️ Video analysis not available with Groq. Please upload an image of the problem instead."
-        
-        else:
-            # Text-based problem
-            prompt = f"""You are an expert Math Tutor for 'The Molecular Man'. 
-            Solve this problem step-by-step. Use LaTeX for math equations (enclose in $ signs).
-            
-            Format your response exactly like this:
-            
-            ### 🧠 Topic Identification
-            (Name of the topic)
-            
-            ### 📊 Given Data
-            (List variables)
-            
-            ### 📐 Formula & Logic
-            (Formulas used)
-            
-            ### 📝 Step-by-Step Solution
-            (Detailed steps)
-            
-            ### ✅ Final Answer
-            (The final result)
-            
-            **Question:** "{question_text}"
-            """
-            
-            try:
-                message = client.chat.completions.create(
-                    model=model_to_use,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=512,
-                )
-                response_text = message.choices[0].message.content
-                response_text = remove_latex_formatting(response_text)
-                return response_text
-            except Exception as e:
-                return f"Error: {str(e)}"
-    
-    # --- INPUT SECTION ---
+    # --- INPUT ---
     st.markdown("### 📝 How to Solve?")
-    
-    input_type = st.radio(
-        "Choose input type:", 
-        ["📄 Text Problem", "🖼️ Upload Image", "📕 Upload PDF"], 
-        horizontal=True
-    )
+    input_type = st.radio("Choose input type:", ["📄 Text Problem", "🖼️ Upload Image", "📕 Upload PDF"], horizontal=True)
     
     user_question = None
     uploaded_file = None
     file_type = None
     
     if input_type == "📄 Text Problem":
-        user_question = st.text_area(
-            "Problem Statement", 
-            height=150, 
-            placeholder="Enter your problem here..."
-        )
-    
+        user_question = st.text_area("Problem Statement", height=150, placeholder="Enter your problem here...")
     elif input_type == "🖼️ Upload Image":
         uploaded_file = st.file_uploader("Upload a problem image", type=["jpg", "jpeg", "png", "gif", "bmp"])
         if uploaded_file:
             st.image(uploaded_file, caption="Uploaded Problem", use_container_width=True)
             file_type = "image"
-    
     elif input_type == "📕 Upload PDF":
         uploaded_file = st.file_uploader("Upload a PDF with problems", type=["pdf"])
         if uploaded_file:
             st.info(f"📄 PDF Uploaded: {uploaded_file.name}")
             file_type = "pdf"
     
-    # --- SOLVE BUTTON ---
+    # --- SOLVE ---
     if st.button("Solve Problem 🚀", type="primary", use_container_width=True):
         if input_type == "📄 Text Problem":
             if not user_question or not user_question.strip():
                 st.warning("❌ Please enter a question first.")
             else:
                 with st.spinner("🤖 Aya is busy doing work..."):
-                    solution = universal_solver(question_text=user_question)
-                    
+                    solution = solve_problem(groq_client, model_to_use, user_question)
                     st.markdown("---")
-                    st.markdown("## 💡 Detailed Solution")
-                    
+                    st.markdown("## 💡 Solution")
                     st.markdown(solution)
                     st.success("✅ Solved by Aya!")
         else:
@@ -525,21 +336,14 @@ Problem: {question_text}"""
                 st.warning(f"❌ Please upload a {input_type.lower()} first.")
             else:
                 with st.spinner(f"🤖 Aya is busy doing work..."):
-                    solution = universal_solver(file_obj=uploaded_file, file_type=file_type)
-                    
+                    solution = solve_problem(groq_client, model_to_use, None, uploaded_file, file_type)
                     st.markdown("---")
-                    st.markdown("## 💡 Detailed Solution")
-                    
+                    st.markdown("## 💡 Solution")
                     st.markdown(solution)
                     st.success("✅ Solved by Aya!")
     
-    # --- FOOTER ---
     st.markdown("---")
-    st.markdown("""
-        <div style="text-align: center; color: #808080; padding: 20px;">
-            <p>Developed by Mohammed Salmaan M | The Molecular Man Expert Tuition Solutions</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #808080; padding: 20px;'><p>Developed by Mohammed Salmaan M | The Molecular Man Expert Tuition Solutions</p></div>", unsafe_allow_html=True)
 
 # --- MAIN FLOW ---
 if st.session_state.logged_in:
