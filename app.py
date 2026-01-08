@@ -367,7 +367,7 @@ def show_main_app():
                         messages=[
                             {"role": "user", "content": prompt + f"\n\nImage (base64): {img_base64}"}
                         ],
-                        max_tokens=2000,
+                        max_tokens=1000,
                     )
                     return message.choices[0].message.content
                 except Exception as e:
@@ -440,7 +440,7 @@ def show_main_app():
                         messages=[
                             {"role": "user", "content": prompt}
                         ],
-                        max_tokens=2000,
+                        max_tokens=1000,
                     )
                     return message.choices[0].message.content
                 except Exception as e:
@@ -480,7 +480,7 @@ def show_main_app():
                     messages=[
                         {"role": "user", "content": prompt}
                     ],
-                    max_tokens=2000,
+                    max_tokens=1000,
                 )
                 return message.choices[0].message.content
             except Exception as e:
